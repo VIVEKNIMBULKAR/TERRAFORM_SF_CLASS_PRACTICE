@@ -1,6 +1,6 @@
 provider "aws" {
-region = var.myregion
-shared_credentials_files = [var.cred_file]
+region = "us-east-1"
+
 }
 data "aws_ami" "myami"{
 
@@ -9,14 +9,14 @@ most_recent = true
 
 filter{
 name = "name"
-values = [var.ami_name]
+values = ["amzn2-ami-hvm*"]
 }
 }
 
 resource "aws_instance" "myec2" {
 ami = data.aws_ami.myami.id
-instance_type = var.instance_type
-count =5
+instance_type = "t3.micro"
+
 tags = {
 name = var.env
 }
