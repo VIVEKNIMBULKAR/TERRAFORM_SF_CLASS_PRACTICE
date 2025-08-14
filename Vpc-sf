@@ -1,0 +1,109 @@
+provider "aws" {
+region = "us-east-1"
+shared_credentials_files = ["~/.aws/credentials"]
+}
+resource "tls_private_key" "mykey" {
+algorithm = "RSA"
+}
+resource "aws_key_pair" "aws_key" {
+key_name  = "key-02apr"
+public_key = tls_private_key.mykey.public_key_openssh
+provisioner "local-exec" {
+command = "echo '${tls_private_key.mykey.private_key_openssh}' > ./key-02apr.pem"
+}
+}
+resource "aws_vpc" "sf-vpc" {
+  cidr_block       = "10.0.0.0/16"
+
+  tags = {
+    Name = "sf-vpc"
+  }
+}
+resource "aws_subnet" "sf-subnet" {
+  vpc_id     = aws_vpc.sf-vpc.id
+  cidr_block = "10.0.1.0/24"
+  depends_on = [aws_vpc.sf-vpc]
+    map_public_ip_on_launch = true
+  tags = {
+    Name = "sf-subnet"
+  }
+}
+resource "aws_route_table" "sf-route-table" {
+  vpc_id = aws_vpc.sf-vpc.id
+  tags = {
+    Name = "sf-route-table"
+}
+}
+resource "aws_route_table_association" "a" {
+  subnet_id      = aws_subnet.sf-subnet.id
+  route_table_id = aws_route_table.sf-route-table.id
+}
+resource "aws_internet_gateway" "gw" {
+  vpc_id = aws_vpc.sf-vpc.id
+
+  tags = {
+    Name = "sf-gw"
+}
+}
+resource "aws_route" "sf-route" {
+  route_table_id  = aws_route_table.sf-route-table.id
+  destination_cidr_block = "0.0.0.0/0"
+  gateway_id      = aws_internet_gateway.gw.id
+}
+
+variable "ingress_ports" {
+  default = [
+    { from_port = 22,   to_port = 22,   protocol = "tcp" },    { from_port = 80,   to_port = 80,   protocol = "tcp" },
+    { from_port = 443,  to_port = 443,  protocol = "tcp" },
+    { from_port = 8080, to_port = 8080, protocol = "tcp" }
+  ]
+}
+
+resource "aws_security_group" "sf-sg" {
+  name        = "sf-sg"
+  description = "Allow SSH, HTTP, HTTPS, and custom port 8080"
+  vpc_id = aws_vpc.sf-vpc.id
+
+  dynamic "ingress" {
+    for_each = var.ingress_ports
+    content {
+      from_port   = ingress.value.from_port
+      to_port     = ingress.value.to_port
+      protocol    = ingress.value.protocol
+      cidr_blocks = ["0.0.0.0/0"]
+    }
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+data "aws_availability_zones" "available" {}
+resource "aws_instance" "myec2" {
+  ami           = "ami-020cba7c55df1f615" # Ubuntu AMI
+  instance_type = "t3.micro"
+  subnet_id     = aws_subnet.sf-subnet.id
+  security_groups = [aws_security_group.sf-sg.id]
+  tags = {
+    name = "terraform-project"
+  }
+
+
+  availability_zone = data.aws_availability_zones.available.names[0]
+
+  provisioner "remote-exec" {
+    connection {
+      type        = "ssh"
+      user        = "ubuntu" # Correct user for Ubuntu AMI
+      private_key = tls_private_key.mykey.private_key_pem
+      host        = self.public_ip
+    }
+    inline = [
+      "sudo apt update -y",
+      "sudo apt install apache2 -y",
+      "sudo systemctl start apache2",
+      "sudo systemctl enable apache2",
+      "sudo apt install git -y"
