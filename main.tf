@@ -1,6 +1,5 @@
 provider "aws" {
 region = "us-east-1"
-
 }
 data "aws_ami" "myami"{
 
@@ -18,6 +17,6 @@ ami = data.aws_ami.myami.id
 instance_type = "t3.micro"
 
 tags = {
-name = var.env
+name = dev
 }
 }
