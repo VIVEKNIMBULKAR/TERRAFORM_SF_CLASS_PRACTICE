@@ -17,6 +17,6 @@ ami = data.aws_ami.myami.id
 instance_type = "t3.micro"
 
 tags = {
-name = dev
+name = "dev"
 }
 }
